@@ -7,7 +7,7 @@
 *Focus: Setting up the environment and building the "Measure" capability.*
 
 - [ ] **Day 1: Project Scaffolding**
-    - Initialize a Monorepo: `/frontend` (React/Next.js) and `/backend` (FastAPI).
+    - Initialize a Monorepo: `/frontend` (React.js) and `/backend` (FastAPI).
     - Set up Docker Compose for local development.
     - Install core ML libraries: `pandas`, `scikit-learn`, `fairlearn`, `aif360`.
 - [ ] **Day 2: File Upload API**
