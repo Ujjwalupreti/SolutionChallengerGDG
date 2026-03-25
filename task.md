@@ -61,7 +61,7 @@
 - [ ] **Day 5: Final Demo Prep & Deployment**
     - Deploy the frontend to Vercel/Netlify.
     - Deploy the backend to Render/AWS/GCP.
-    - Record a walkthrough video demonstrating the **Measure ➡️ Flag ➡️ Fix** workflow.
+    - Record a walkthrough video demonstrating the **Measure ➡️ Flag ➡️ Fix** workflow. 
 
 ---
 
