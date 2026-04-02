@@ -6,18 +6,18 @@
 ## 📅 Week 1: Foundation & Data Profiling
 *Focus: Setting up the environment and building the "Measure" capability.*
 
-- [ ] **Day 1: Project Scaffolding**
+- [x] **Day 1: Project Scaffolding**
     - Initialize a Monorepo: `/frontend` (React.js) and `/backend` (FastAPI).
     - Set up Docker Compose for local development.
     - Install core ML libraries: `pandas`, `scikit-learn`, `fairlearn`, `aif360`.
-- [ ] **Day 2: File Upload API**
+- [x] **Day 2: File Upload API**
     - Create a FastAPI endpoint to accept `.csv` or `.json` file uploads.
     - Implement a "Schema Discovery" function that returns column names to the frontend so users can select "Target" vs "Protected" attributes.
-- [ ] **Day 3: Demographic Profiling (The "Measure" Phase)**
+- [x] **Day 3: Demographic Profiling (The "Measure" Phase)**
     - Write a Python service to calculate basic representation:
         - Counts and percentages for protected groups (e.g., Male vs Female).
         -     - Return a JSON object containing these distributions.
-- [ ] **Day 4-5: Basic Frontend Dashboard**
+- [x] **Day 4-5: Basic Frontend Dashboard**
     - Build an "Upload" page with a drag-and-drop zone.
     - Create a "Configuration" step where users select which column is the sensitive attribute (e.g., "Race") and which is the outcome (e.g., "Hired").
     - Render the first set of charts using `Recharts` or `Chart.js`.
