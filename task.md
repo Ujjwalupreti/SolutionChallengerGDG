@@ -21,7 +21,8 @@
     - Build an "Upload" page with a drag-and-drop zone.
     - Create a "Configuration" step where users select which column is the sensitive attribute (e.g., "Race") and which is the outcome (e.g., "Hired").
     - Render the first set of charts using `Recharts` or `Chart.js`.
-
+> Updated at 2 April 2026,
+> Status: Delay
 ---
 
 ## 📅 Week 2: The Audit Engine
