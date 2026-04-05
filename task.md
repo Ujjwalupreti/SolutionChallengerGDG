@@ -28,14 +28,14 @@
 ## 📅 Week 2: The Audit Engine
 *Focus: Implementing the "Flag" capability using statistical fairness metrics.*
 
-- [ ] **Day 1: Statistical Parity & Disparate Impact**
+- [x] **Day 1: Statistical Parity & Disparate Impact**
     - Implement the **Disparate Impact Ratio**.
     - **Rule of Thumb:** If the ratio of selection rates between two groups is $< 0.8$, flag as "High Bias."
     - $$\text{Disparate Impact} = \frac{P(\hat{Y}=1 | D=\text{unprivileged})}{P(\hat{Y}=1 | D=\text{privileged})}$$
-- [ ] **Day 2: Model Performance Metrics**
+- [x] **Day 2: Model Performance Metrics**
     - Allow users to upload a second file: "Model Predictions."
     - Calculate **False Positive Rate (FPR)** and **False Negative Rate (FNR)** per group.
-    - - [ ] **Day 3: Equal Opportunity Difference**
+- [ ] **Day 3: Equal Opportunity Difference**
     - Use `Fairlearn` to calculate the difference in True Positive Rates between groups.
     - A higher difference indicates the model is "missing" qualified candidates in one group more than the other.
 - [ ] **Day 4-5: The "Bias Health Report" UI**
