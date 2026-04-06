@@ -35,7 +35,7 @@
 - [x] **Day 2: Model Performance Metrics**
     - Allow users to upload a second file: "Model Predictions."
     - Calculate **False Positive Rate (FPR)** and **False Negative Rate (FNR)** per group.
-- [x] **Day 3: Equal Opportunity Difference**
+- [ ] **Day 3: Equal Opportunity Difference**
     - Use `Fairlearn` to calculate the difference in True Positive Rates between groups.
     - A higher difference indicates the model is "missing" qualified candidates in one group more than the other.
 - [ ] **Day 4-5: The "Bias Health Report" UI**
