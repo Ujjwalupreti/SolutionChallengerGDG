@@ -1,217 +1,170 @@
 import pandas as pd
 import numpy as np
-import io
 from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier
-from fairlearn.metrics import (
-    MetricFrame,
-    selection_rate,
-    true_positive_rate,
-    false_positive_rate,
-    false_negative_rate,
-    demographic_parity_ratio
-)
+from sklearn.metrics import accuracy_score
+from sklearn.base import BaseEstimator, ClassifierMixin
+
+# New Powerful Models
+from xgboost import XGBClassifier
+import torch
+import torch.nn as nn
+import torch.optim as optim
+
+# Fairness Libraries
+from fairlearn.metrics import MetricFrame, selection_rate, true_positive_rate, false_positive_rate, false_negative_rate, demographic_parity_ratio
 from fairlearn.preprocessing import CorrelationRemover
 from scipy.stats import chi2_contingency
 
+# ─── 1. Deep Learning Architecture (PyTorch) ────────────────────────
+class DeepLearningMLP(nn.Module):
+    """A standard Feed-Forward Neural Network for tabular data."""
+    def __init__(self, input_dim):
+        super().__init__()
+        self.network = nn.Sequential(
+            nn.Linear(input_dim, 64),
+            nn.ReLU(),
+            nn.Dropout(0.2),  # Prevent overfitting
+            nn.Linear(64, 32),
+            nn.ReLU(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()      # Output probability between 0 and 1
+        )
+
+    def forward(self, x):
+        return self.network(x)
+
+class PyTorchSklearnWrapper(BaseEstimator, ClassifierMixin):
+    """Wraps PyTorch in a Scikit-Learn interface so it plays nicely with Fairlearn."""
+    def __init__(self, epochs=50, lr=0.01):
+        self.epochs = epochs
+        self.lr = lr
+        self.model = None
+
+    def fit(self, X, y):
+        # Convert Pandas DataFrames to PyTorch Tensors
+        X_tensor = torch.FloatTensor(X.values if isinstance(X, pd.DataFrame) else X)
+        y_tensor = torch.FloatTensor(y.values if isinstance(y, pd.Series) else y).unsqueeze(1)
+
+        self.model = DeepLearningMLP(input_dim=X_tensor.shape[1])
+        criterion = nn.BCELoss()
+        optimizer = optim.Adam(self.model.parameters(), lr=self.lr)
+
+        # Training Loop
+        self.model.train()
+        for epoch in range(self.epochs):
+            optimizer.zero_grad()
+            outputs = self.model(X_tensor)
+            loss = criterion(outputs, y_tensor)
+            loss.backward()
+            optimizer.step()
+            
+        return self
+
+    def predict(self, X):
+        X_tensor = torch.FloatTensor(X.values if isinstance(X, pd.DataFrame) else X)
+        self.model.eval()
+        with torch.no_grad():
+            outputs = self.model(X_tensor)
+            # Convert probabilities to binary predictions (0 or 1)
+            return (outputs.numpy() > 0.5).astype(int).flatten()
+
+# ─── 2. The Fairness Engine ────────────────────────────────────────
 class FairnessAnalyzer:
     def __init__(self):
         self.df = None
-        self._last_config = {}  # Store last audit config for mitigation re-use
-        # Market-standard models for comparison
+        self._last_config = {}
+        
+        # 🏆 THE UPGRADED ML FACTORY
         self.models = {
             "Logistic Regression (Baseline)": LogisticRegression(max_iter=1000),
-            "Random Forest (Non-Linear)": RandomForestClassifier(n_estimators=100)
+            "Random Forest (Non-Linear)": RandomForestClassifier(n_estimators=100),
+            "XGBoost (Gradient Boosting)": XGBClassifier(use_label_encoder=False, eval_metric='logloss', random_state=42),
+            "PyTorch Neural Network (Deep Learning)": PyTorchSklearnWrapper(epochs=100, lr=0.005)
         }
 
     def load_data(self, df: pd.DataFrame):
-        """Loads dataset into memory."""
         self.df = df
 
-    def _get_intersectional_col(self, protected_attribute: str):
-        """Creates an intersectional column if multiple attributes are provided."""
-        attr_list = [attr.strip() for attr in protected_attribute.split(',')]
-        if len(attr_list) > 1:
-            col_name = "Intersectional_Group"
-            self.df[col_name] = self.df[attr_list].astype(str).agg('_'.join, axis=1)
-            return col_name, attr_list
-        return attr_list[0], attr_list
-
-    def evaluate_bias(self, target_column: str, protected_attribute: str, favorable_class: str, privileged_group: str, prediction_column: str = None):
-        if self.df is None:
-            raise ValueError("Data not loaded. Upload a CSV first.")
+    def evaluate_bias(self, target_column: str, protected_attribute: str, favorable_class: str, privileged_group: str):
+        self._last_config = { "target_column": target_column, "protected_attribute": protected_attribute, "favorable_class": favorable_class, "privileged_group": privileged_group }
         
-        # Store config for mitigate_bias to re-use
-        self._last_config = {
-            "target_column": target_column,
-            "protected_attribute": protected_attribute,
-            "favorable_class": favorable_class,
-            "privileged_group": privileged_group,
-        }
-
-        protected_col, attr_list = self._get_intersectional_col(protected_attribute)
-        
-        # 1. Basic Demographic Stats
-        total_records = len(self.df)
-        demographic_counts = self.df[protected_col].value_counts().to_dict()
-        demographic_percentages = {str(k): float(v / total_records) for k, v in demographic_counts.items()}
-        
-        # 2. Data Preparation
         y_true = (self.df[target_column].astype(str) == favorable_class).astype(int)
-        X = pd.get_dummies(self.df.drop(columns=[target_column]))
-        X = X.fillna(0)
         
-        # 3. Multi-Model Evaluation & Selection Rates
+        # Standardize data for Neural Networks (Crucial step for Deep Learning stability)
+        X_raw = pd.get_dummies(self.df.drop(columns=[target_column])).fillna(0)
+        # Simple Min-Max scaling for the PyTorch/XGBoost models to digest easily
+        X = (X_raw - X_raw.min()) / (X_raw.max() - X_raw.min() + 1e-8)
+        
         model_results = {}
         selection_rates = {}
-        tpr_data = {}
-        fpr_data = {}
         
         for name, model in self.models.items():
+            # The interface remains completely uniform regardless of the backend engine
             model.fit(X, y_true)
             y_pred = model.predict(X)
+            acc = accuracy_score(y_true, y_pred)
             
-            # Metrics Frame
-            mf = MetricFrame(
-                metrics={
-                    "selection_rate": selection_rate,
-                    "tpr": true_positive_rate,
-                    "fpr": false_positive_rate,
-                    "fnr": false_negative_rate
-                },
-                y_true=y_true,
-                y_pred=y_pred,
-                sensitive_features=self.df[protected_col]
-            )
-            
-            # Disparate Impact Calculation
+            mf = MetricFrame(metrics={"selection_rate": selection_rate}, y_true=y_true, y_pred=y_pred, sensitive_features=self.df[protected_attribute])
             sr_group = mf.by_group['selection_rate'].to_dict()
             priv_sr = sr_group.get(privileged_group, list(sr_group.values())[0])
             di_scores = {str(g): float(sr / priv_sr) if priv_sr > 0 else 0.0 for g, sr in sr_group.items()}
             
-            model_results[name] = {
-                "disparate_impact": di_scores,
-                "dp_ratio": float(demographic_parity_ratio(y_true, y_pred, sensitive_features=self.df[protected_col]))
-            }
-            
-            # Save rates for the primary Baseline model for the frontend charts
-            if "Baseline" in name:
-                selection_rates = {str(k): float(v) for k, v in sr_group.items()}
-                tpr_data = {str(k): float(v) for k, v in mf.by_group['tpr'].to_dict().items()}
-                fpr_data = {str(k): float(v) for k, v in mf.by_group['fpr'].to_dict().items()}
+            model_results[name] = { "accuracy": float(acc), "disparate_impact": di_scores, "dp_ratio": float(demographic_parity_ratio(y_true, y_pred, sensitive_features=self.df[protected_attribute])) }
+            if "Baseline" in name: selection_rates = {str(k): float(v) for k, v in sr_group.items()}
 
-        # 4. Statistical Rigor (p-value)
-        contingency_table = pd.crosstab(self.df[protected_col], y_true)
+        # Auto-Selector Logic (Finds the best model passing the 80% legal threshold)
+        fair_models = {k: v for k, v in model_results.items() if v["dp_ratio"] >= 0.80}
+        if fair_models:
+            best = max(fair_models, key=lambda k: fair_models[k]["accuracy"])
+            reason = f"Selected because it passes compliance (DP={fair_models[best]['dp_ratio']:.2f}) with optimal accuracy ({fair_models[best]['accuracy']*100:.1f}%)."
+        else:
+            best = max(model_results, key=lambda k: model_results[k]["accuracy"])
+            reason = f"CRITICAL WARNING: No models passed 80% parity. {best} is the most accurate but requires immediate Bias Mitigation."
+
+        # Statistical Rigor test
         try:
-            _, p_value, _, _ = chi2_contingency(contingency_table)
-        except:
-            p_value = 1.0
-            
-        # 5. Proxy Variable Detective (Indirect Bias)
-        proxy_alerts = []
-        for col in self.df.columns:
-            if col in [target_column, protected_col] or col in attr_list:
-                continue
-            try:
-                if pd.api.types.is_numeric_dtype(self.df[col]):
-                    corr = self.df[col].corr(self.df[protected_col] if pd.api.types.is_numeric_dtype(self.df[protected_col]) else self.df[protected_col].astype('category').cat.codes)
-                    if abs(corr) > 0.7:
-                        proxy_alerts.append({"feature": col, "correlation": float(abs(corr))})
-            except:
-                pass
+            _, p_value, _, _ = chi2_contingency(pd.crosstab(self.df[protected_attribute], y_true))
+        except: p_value = 1.0
 
-        # 6. Build chartData array for Recharts ComposedChart
-        chart_data = []
-        for group, rate in selection_rates.items():
-            chart_data.append({
-                "name": str(group),
-                "Original Rate %": round(rate * 100, 2),
-            })
+        # Proxy Detective
+        proxy_alerts = []
+        for col in self.df.select_dtypes(include='number').columns:
+            if col != target_column and col != protected_attribute:
+                corr = abs(self.df[col].corr(pd.factorize(self.df[protected_attribute])[0]))
+                if corr > 0.7: proxy_alerts.append({"feature": col, "correlation": float(corr)})
+
+        chart_data = [{"name": str(g), "Original Rate %": round(r * 100, 2)} for g, r in selection_rates.items()]
 
         return {
             "statistical_significance": {"p_value": float(p_value), "is_reliable": bool(p_value <= 0.05)},
             "proxy_alerts": proxy_alerts,
             "model_comparison": model_results,
+            "auto_selector": { "recommended_model": best, "reason": reason, "requires_mitigation": len(fair_models) == 0 },
             "chartData": chart_data,
-            "selection_rate_by_group": selection_rates,
-            "true_positive_rate_by_group": tpr_data,
-            "false_positive_rate_by_group": fpr_data,
-            "demographic_percentages": demographic_percentages,
-            "disparate_impact": model_results["Logistic Regression (Baseline)"]["disparate_impact"]
         }
 
-    def mitigate_bias(self, target_column: str, protected_attribute: str, favorable_class: str = None, privileged_group: str = None):
-        """Uses CorrelationRemover to scrub bias, then re-evaluates to build chartData with Cleaned Rate %."""
-        if self.df is None:
-            raise ValueError("Data not loaded.")
-
-        # Fall back to stored config if not passed explicitly
-        if favorable_class is None:
-            favorable_class = self._last_config.get("favorable_class", "1")
-        if privileged_group is None:
-            privileged_group = self._last_config.get("privileged_group", "")
-
-        protected_col, attr_list = self._get_intersectional_col(protected_attribute)
-
+    def mitigate_bias(self, target_column: str, protected_attribute: str, favorable_class: str, privileged_group: str):
         X = pd.get_dummies(self.df.drop(columns=[target_column]))
-        # Identify sensitive columns in the one-hot encoded dataframe
-        sensitive_cols = [c for c in X.columns if any(attr.strip() in c for attr in protected_attribute.split(','))]
+        sensitive_cols = [c for c in X.columns if protected_attribute in c]
         
         cr = CorrelationRemover(sensitive_feature_ids=sensitive_cols)
         X_mitigated = cr.fit_transform(X)
         
-        # Reconstruct DataFrame (excluding the original sensitive features)
         cols_kept = [c for c in X.columns if c not in sensitive_cols]
         df_mitigated = pd.DataFrame(X_mitigated, columns=cols_kept)
         df_mitigated[target_column] = self.df[target_column].values
 
-        # Re-run baseline model on cleaned data to get post-mitigation rates
         y_true = (self.df[target_column].astype(str) == favorable_class).astype(int)
-        X_clean = df_mitigated.drop(columns=[target_column]).fillna(0)
+        
+        # We use Logistic Regression to verify the dataset is cleaned, as it is highly interpretable
+        lr = LogisticRegression(max_iter=1000)
+        lr.fit(df_mitigated.drop(columns=[target_column]).fillna(0), y_true)
+        y_pred_clean = lr.predict(df_mitigated.drop(columns=[target_column]).fillna(0))
 
-        try:
-            lr = LogisticRegression(max_iter=1000)
-            lr.fit(X_clean, y_true)
-            y_pred_clean = lr.predict(X_clean)
+        mf_clean = MetricFrame(metrics={"selection_rate": selection_rate}, y_true=y_true, y_pred=y_pred_clean, sensitive_features=self.df[protected_attribute])
+        clean_rates = {str(k): float(v) for k, v in mf_clean.by_group['selection_rate'].to_dict().items()}
 
-            mf_clean = MetricFrame(
-                metrics={"selection_rate": selection_rate},
-                y_true=y_true,
-                y_pred=y_pred_clean,
-                sensitive_features=self.df[protected_col]
-            )
-            clean_rates = {str(k): float(v) for k, v in mf_clean.by_group['selection_rate'].to_dict().items()}
-        except Exception:
-            clean_rates = {}
+        chart_data = [{"name": str(g), "Cleaned Rate %": round(r * 100, 2)} for g, r in clean_rates.items()]
 
-        # Re-fetch original rates from stored chartData context
-        orig_rates = {}
-        try:
-            y_pred_orig = list(self.models.values())[0].predict(X.fillna(0))
-            mf_orig = MetricFrame(
-                metrics={"selection_rate": selection_rate},
-                y_true=y_true,
-                y_pred=y_pred_orig,
-                sensitive_features=self.df[protected_col]
-            )
-            orig_rates = {str(k): float(v) for k, v in mf_orig.by_group['selection_rate'].to_dict().items()}
-        except Exception:
-            pass
-
-        # Build combined chartData with both Original and Cleaned rates
-        all_groups = set(list(orig_rates.keys()) + list(clean_rates.keys()))
-        chart_data = []
-        for group in all_groups:
-            entry: dict = {"name": str(group)}
-            if group in orig_rates:
-                entry["Original Rate %"] = round(orig_rates[group] * 100, 2)
-            if group in clean_rates:
-                entry["Cleaned Rate %"] = round(clean_rates[group] * 100, 2)
-            chart_data.append(entry)
-
-        return {
-            "message": "Mitigation applied successfully.",
-            "mitigated_features_count": len(cols_kept),
-            "chartData": chart_data,
-            "preview": df_mitigated.head(10).to_dict(orient="records")
-        }
+        return { "message": "Mitigation applied.", "mitigated_features_count": len(cols_kept), "chartData": chart_data }
