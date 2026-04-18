@@ -38,7 +38,7 @@
 - [x] **Day 3: Equal Opportunity Difference**
     - Use `Fairlearn` to calculate the difference in True Positive Rates between groups.
     - A higher difference indicates the model is "missing" qualified candidates in one group more than the other.
-- [ ] **Day 4-5: The "Bias Health Report" UI**
+- [x] **Day 4-5: The "Bias Health Report" UI**
     - Create a "Scorecard" component.
     - Use color-coding: **Red** (Critical Bias), **Yellow** (Warning), **Green** (Fair).
     - Add "Explainers" (Tooltips) that define what "Disparate Impact" actually means for a non-technical user.
